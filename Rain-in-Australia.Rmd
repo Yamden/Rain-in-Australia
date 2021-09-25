@@ -1,0 +1,127 @@
+---
+title: "Project 2 Regression"
+Author: Camden Squire
+output: pdf_document
+---
+Data can be found on Kaggle: https://www.kaggle.com/jsphyg/weather-dataset-rattle-package
+The data is weather data in Australia and I am using this to predict the chances of Rain occurring tomorrow or not. I used the predictors of Humidity, Pressure, and WindSPeed to predict the chance of rain
+
+Some of the steps that had to be made to cleanup the data was to re-do how the data was presented. The chance of rain was given in percent, but even a small chance of rain is enough for it to predict wheather it'll rain or not so I redid the whole column of RainToday and RainTomorrow to 1 and 0 if there is rain or no rain. In order to do that I used the class of tidyverse and after converting, had to reclassify the column to numerical data so that I could evaluate on it. Alot of the rows had N/A so to fix that I had to exclude any rows that did not have data because I couldn't evaluate on it. In addition to that, I removed a majority of the columns that I thought were irrelevant such as Date, Evaporation, Sunshine, Clouds, and Location. It could rain anywhere, and I'm not trying to predict a certain location in Australia, It can rain with the Sun, with or without clouds, and most of the evaporation or Risk MM data were N/A so i removed the whole whole thing. 
+```{r} 
+# Reading in Data
+df3 <- read.csv("weatherAUS.csv")
+
+# Data Cleaning
+df3 <- na.omit(df3)
+df3$Date<-NULL
+df3$Evaporation<-NULL
+df3$Sunshine<-NULL
+df3$Cloud9am<-NULL
+df3$Cloud3pm<-NULL
+df3$RISK_MM<-NULL
+df3$Location<-NULL
+
+library(tidyverse)
+df3$RainToday<-str_replace_all(df3$RainToday,"No","0")
+df3$RainToday<-str_replace_all(df3$RainToday,"Yes","1")
+df3$RainTomorrow<-str_replace_all(df3$RainTomorrow,"No","0")
+df3$RainTomorrow<-str_replace_all(df3$RainTomorrow,"Yes","1")
+
+
+df3$MinTemp<-as.numeric(df3$MinTemp)
+df3$RainToday<-as.numeric(df3$RainToday)
+df3$RainTomorrow<-as.numeric(df3$RainTomorrow)
+
+
+
+colSums(is.na(df3))
+```
+ 
+# DATA EXPLORATION #
+```{r}
+str(df3)
+names(df3)
+summary(df3)
+dim(df3)
+head(df3)
+
+# Data Visualization #
+hist(df3$WindGustSpeed)
+hist(df3$MaxTemp)
+hist(df3$Pressure3pm)
+plot(df3$Humidity3pm, df3$Rainfall)
+plot(df3$Humidity3pm, df3$MaxTemp)
+plot(df3$WindGustSpeed, df3$Rainfall)
+plot(df3$Temp3pm, df3$Rainfall)
+```
+
+
+# ML ALGORITHIMS #
+```{r}
+# Multiple Linear Regression
+df3$RainTomorrow <- as.numeric(df3$RainTomorrow)
+
+library(caret)
+set.seed(1234)
+i <- sample(1:nrow(df3), nrow(df3)*.75, replace = FALSE)
+train <- df3[i,]
+test <- df3[-i,]
+
+lm1 <- lm(RainTomorrow~WindGustSpeed+Humidity3pm+Pressure3pm, data=train)
+summary(lm1)
+
+probs_rain <- predict(lm1, newdata=test)
+pred_rain <- ifelse(probs_rain>.5, 1, 0)
+table(test$RainTomorrow, pred_rain>.5)
+cor1 <- cor(pred_rain, test$RainTomorrow)
+mse1 <- mean((pred_rain - test$RainTomorrow)^2)
+print("Correlation: ")
+cor1
+print("MSE: ")
+mse1
+```
+I chose to run a Linear Regression because I am trying to find the best model for correlation for when it rains given the Wind, Humidity, and Pressure. Linear regression works well for a model to find a linear correlation between variables, and given the following variables, I was able to create a correlation of: 48%
+That means that given the variables, the model predicted that there is a 48% correlation between rain happening tomorrow given the wind, humidity, and pressure. There was also a MSE of .15, given that the the rainfall is either 1 or 0, which is close to an almost perfect model.
+
+```{r}
+# KNN REGRESSION
+library(class)
+#train_scaled <-  train[, 1:3,8:15]
+train_scaled <-  train[c(5,11,13)]
+means <- sapply(train_scaled, mean)
+stdvs <- sapply(train_scaled, sd)
+train_scaled <- scale(train_scaled, center = means, scale=stdvs)
+#test_scaled <- scale(test[, 1:3,8:15], center = means, scale = stdvs)
+test_scaled <- scale(test[c(5,11,13)], center = means, scale = stdvs)
+
+fit <- knnreg(train_scaled, train$RainTomorrow, k=5)
+pred1 <- predict(fit, test_scaled)
+cor_knn1 <- cor(pred1, test$RainTomorrow)
+mse_knn1 <- mean((pred1 - test$RainTomorrow)^2)
+print(cor_knn1)
+print(mse_knn1)
+```
+I chose to run a KNN Regression because the data given to predict when it rains is entirely Numerical. This makes it easy for KNN regression to predict a numerical target based on similarity measurements to predict if it'll rain tomorrow or not. I was able to create a correlation of: 52%
+This means that given the variables, the model predicted that there is a 52% correlation between rain happening given the wind, humidity, and pressure. There was also a MSE of .12, given that the the rainfall is either 1 or 0, which is close to an almost perfect model.
+```{r}
+#decision tree
+library(rpart)
+library(rpart.plot)
+decision_tree <- rpart(RainTomorrow~WindGustSpeed+Humidity3pm+Pressure3pm, data = test, method = "class")
+rpart.plot(decision_tree, uniform=TRUE)
+pred_tree <- predict(decision_tree, newdata=test)
+print(paste('correlation: ', cor(pred_tree, test$RainTomorrow)))
+rmse_tree <- sqrt(mean((pred_tree - test$RainTomorrow)^2))
+print(paste('rmse: ', rmse_tree))
+```
+I chose to run a Decision Tree Regression because the tree breaks down the set into smaller subsets to evaluate which nodes or leafs are the best for correlation. This makes it easy for Decision Tree Regression to predict a regression because all the values are numerical as well. Given this model, I was able to create a correlation of 54%
+This means that given the variables, the model predicted that there is a 54% correlation between rain happening tomorrow given the wind, humidity, and pressure. There was also a RMSE of .61, meaning we were about .61 off the rainfall percetange on average given that chance of rainfall is 0 or 1. THis is relatively close to an almost perfect model
+
+# RESULTS ANALYSIS #
+Ranking the algorithms from best to worst:
+1. Decision Tree Regression
+2. KNN Regression
+3. Multiple Linear Regression
+
+
+The reason why Linear Regression was ranked last was because it had the lowest correlation. I think this attributed to the fact that the predictors used can vary widely. For example, wind does not always guarantee rain, but humidity and pressure does. Wind can still bring rain, but it is not always guaranteed. Given this source of error, the Linear Regression had values that were not in line of correlation, causing the correlation to be lower than the others. The next best model was KNN Regression. I think this attributed to the fact that the observations are generally bunched up so it's easier for data to take the average target value. Still the correlation was about 52% and the reason why this wasn't a super high correlation was due to the fact that rain can come from different sources of attributes. A high humidity does not always guarantee rain, and neither does pressure. Yet this still performed better than the linear regression because it was able to identify an average of the values to create a regression line. The best model to perform was the decision tree Regression. I think this attributed to the fact that there was many variables that could be split up to identify a split in the data to create a regression. The RSS in this case was minimized to the best ability because all the predictors would cause rain, but by splitting the data the averages could be accounted for each unique possibility for the predictors and as a result we got the best model of 54%. The reason why there was such low correlation for all of them, is because predicting the weather is not always guaranteed. Even in modern weather predictions the chance of rain or snow is still wild and no weather channel always gets it right, but what weather channels can do is predict the chance of rain, which is essenttially what the models I created are doing given the observations. All the model scripts were able to learn from the data and this is useful to know because if you wanted to predict the weather given certain situations, you can determine which model would work best given the predictors you wanted to use. The decision tree regression would be best if you wanted the data to tell you the chances of rain or snow for each weather pattern.
